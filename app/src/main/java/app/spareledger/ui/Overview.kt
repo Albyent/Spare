@@ -157,7 +157,7 @@ private fun SpendingCard(
     onToggle: () -> Unit,
 ) {
     val hero = LocalHero.current
-    val remaining = report.remaining
+    val remaining = report.displayedRemaining
     val overBudget = remaining != null && remaining < 0 && !hidden
     val heading = when {
         overBudget -> "Over budget"
@@ -195,6 +195,12 @@ private fun SpendingCard(
                     mainValue, Modifier.fillMaxWidth().padding(top = 3.dp).amountVisibility(mainValue),
                     style = MaterialTheme.typography.displayLarge, color = if (overBudget) hero.negative else hero.text,
                 )
+                if (report.limitedByFunds && !hidden) {
+                    Text(
+                        "Limited by account funds", Modifier.padding(top = 4.dp),
+                        color = hero.muted, style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
             IconButton(onClick = onToggle) {
                 Icon(

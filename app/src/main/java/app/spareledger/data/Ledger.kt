@@ -133,8 +133,11 @@ internal data class Spending(
     val spent: Long,
     val categories: Map<Long, Long>,
     val limits: Map<Long, Long>,
+    val availableFunds: Long?,
 ) {
     val remaining = budget?.minus(spent)
+    val displayedRemaining = remaining?.let { if (availableFunds == null) it else minOf(it, availableFunds) }
+    val limitedByFunds = displayedRemaining != remaining
 }
 
 internal fun LedgerSnapshot.budgetFor(month: YearMonth): Long? =
@@ -158,7 +161,13 @@ internal fun LedgerSnapshot.spending(month: YearMonth, today: LocalDate): Spendi
             EntryKind.INCOME, EntryKind.TRANSFER -> Unit
         }
     }
-    return Spending(budgetFor(month), spent, totals, limitsFor(month))
+    val budget = budgetFor(month)
+    val funds = if (budget != null && month == YearMonth.from(today)) {
+        cashBalance(balances(today)).coerceAtLeast(0)
+    } else {
+        null
+    }
+    return Spending(budget, spent, totals, limitsFor(month), funds)
 }
 
 internal fun LedgerSnapshot.limitsFor(month: YearMonth): Map<Long, Long> {
@@ -172,13 +181,17 @@ internal fun LedgerSnapshot.limitsFor(month: YearMonth): Map<Long, Long> {
 
 internal fun LedgerSnapshot.balances(today: LocalDate): Map<Long, Long> {
     val totals = accounts.associate { it.id to it.openingMinor }.toMutableMap()
+    val day = today.toEpochDay()
     for (entry in entries) {
-        if (entry.day > today.toEpochDay()) continue
+        if (entry.day > day) continue
         totals[entry.accountId] = totals.getValue(entry.accountId) + entry.sourceDelta()
         entry.destinationId?.let { id -> totals[id] = totals.getValue(id) + entry.minor }
     }
     return totals
 }
+
+internal fun LedgerSnapshot.cashBalance(balances: Map<Long, Long>): Long =
+    activeAccounts.asSequence().filter { it.kind != AccountKind.CARD }.sumOf { balances.getValue(it.id) }
 
 internal fun LedgerEntry.sourceDelta(): Long = when (kind) {
     EntryKind.EXPENSE, EntryKind.TRANSFER -> -minor

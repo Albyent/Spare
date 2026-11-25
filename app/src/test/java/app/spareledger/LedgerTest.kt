@@ -18,6 +18,7 @@ import app.spareledger.data.spending
 import app.spareledger.data.validateEntry
 import app.spareledger.data.writeLedgerCsv
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -92,8 +93,47 @@ class LedgerTest {
     fun zeroBudgetRemainsDistinctFromAnUnsetBudget() {
         val data = ledger(purchase).copy(budgets = listOf(MonthlyBudget(month.toString(), 0)))
         assertEquals(0L, data.spending(month, today).budget)
-        assertEquals(-12_500L, data.spending(month, today).remaining)
-        assertNull(ledger(purchase).spending(month, today).remaining)
+        assertEquals(-12_500L, data.spending(month, today).displayedRemaining)
+        assertNull(ledger(purchase).spending(month, today).displayedRemaining)
+    }
+
+    @Test
+    fun currentMonthRemainingIsLimitedBySpendableAccountBalances() {
+        val wallet = Account("E-wallet", AccountKind.WALLET, 60_000, id = 3)
+        val cash = Account("Cash", AccountKind.CASH, 10_000, id = 4)
+        val archived = Account("Old account", AccountKind.BANK, 80_000, archived = true, id = 5)
+        val expense = purchase.copy(accountId = wallet.id, minor = 20_000)
+        val data = ledger(expense).copy(
+            accounts = listOf(bank, wallet, cash, card.copy(openingMinor = 90_000), archived),
+            budgets = listOf(MonthlyBudget(month.toString(), 200_000)),
+        )
+        val initial = data.spending(month, today)
+        assertEquals(180_000L, initial.remaining)
+        assertEquals(100_000L, initial.displayedRemaining)
+        assertTrue(initial.limitedByFunds)
+
+        val income = LedgerEntry(
+            EntryKind.INCOME, 100_000, today.toEpochDay(), bank.id, categoryId = salary.id, id = 2,
+        )
+        val funded = data.copy(entries = listOf(expense, income)).spending(month, today)
+        assertEquals(180_000L, funded.displayedRemaining)
+        assertFalse(funded.limitedByFunds)
+    }
+
+    @Test
+    fun zeroFundsCapTheCurrentMonthWithoutChangingHistoricalBudgets() {
+        val previous = month.minusMonths(1)
+        val data = ledger().copy(
+            accounts = listOf(bank.copy(openingMinor = -5_000)),
+            budgets = listOf(MonthlyBudget(month.toString(), 30_000), MonthlyBudget(previous.toString(), 40_000)),
+        )
+        val current = data.spending(month, today)
+        assertEquals(0L, current.displayedRemaining)
+        assertTrue(current.limitedByFunds)
+
+        val historical = data.spending(previous, today)
+        assertEquals(40_000L, historical.displayedRemaining)
+        assertFalse(historical.limitedByFunds)
     }
 
     @Test

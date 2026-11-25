@@ -38,6 +38,7 @@ import app.spareledger.data.AccountKind
 import app.spareledger.data.LedgerSnapshot
 import app.spareledger.data.Money
 import app.spareledger.data.balances
+import app.spareledger.data.cashBalance
 import java.time.LocalDate
 
 @Composable
@@ -51,7 +52,7 @@ internal fun AccountsScreen(
     val balances = remember(data, today) { data.balances(today) }
     val active = data.activeAccounts
     val archived = data.accounts.filter(Account::archived)
-    val cash = active.filter { it.kind != AccountKind.CARD }.sumOf { balances.getValue(it.id) }
+    val cash = data.cashBalance(balances)
     val cards = active.filter { it.kind == AccountKind.CARD }
     val owed = cards.sumOf { (-balances.getValue(it.id)).coerceAtLeast(0) }
 
