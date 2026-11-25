@@ -1,0 +1,10 @@
+.gradle/
+.kotlin/
+.idea/
+**/build/
+local.properties
+*.iml
+*.jks
+*.p12
+/Spare.apk
+/Spare.apk.idsig

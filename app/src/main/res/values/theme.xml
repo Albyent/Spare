@@ -1,0 +1,7 @@
+<resources>
+    <color name="spare_window">#F6F3EB</color>
+    <style name="Theme.Spare" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/spare_window</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
