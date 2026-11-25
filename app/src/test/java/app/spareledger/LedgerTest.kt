@@ -10,6 +10,7 @@ import app.spareledger.data.LedgerConfig
 import app.spareledger.data.LedgerEntry
 import app.spareledger.data.LedgerSnapshot
 import app.spareledger.data.Money
+import app.spareledger.data.MonthlyBudget
 import app.spareledger.data.MonthlyLimit
 import app.spareledger.data.balances
 import app.spareledger.data.limitsFor
@@ -44,7 +45,6 @@ class LedgerTest {
     fun cardPaymentUpdatesBothBalancesAndCountsPurchaseOnce() {
         val ledger = ledger(purchase, payment)
         assertEquals(12_500L, ledger.spending(month, today).spent)
-        assertEquals(0L, ledger.spending(month, today).income)
         assertEquals(mapOf(bank.id to 37_500L, card.id to 0L), ledger.balances(today))
     }
 
@@ -64,11 +64,36 @@ class LedgerTest {
             EntryKind.INCOME, 30_000, today.toEpochDay(), bank.id, categoryId = salary.id, id = 4,
         )
         val future = purchase.copy(id = 5, day = today.plusDays(1).toEpochDay())
-        val data = ledger(oldPurchase, refund, income, future)
+        val data = ledger(oldPurchase, refund, income, future).copy(
+            budgets = listOf(MonthlyBudget(month.toString(), 20_000)),
+        )
         assertEquals(-2_000L, data.spending(month, today).spent)
-        assertEquals(32_000L, data.spending(month, today).net)
+        assertEquals(22_000L, data.spending(month, today).remaining)
         assertEquals(12_500L, data.spending(month.minusMonths(1), today).spent)
         assertEquals(mapOf(bank.id to 80_000L, card.id to -10_500L), data.balances(today))
+    }
+
+    @Test
+    fun monthlyBudgetUsesSpendingOnlyAndBelongsToTheSelectedMonth() {
+        val income = LedgerEntry(
+            EntryKind.INCOME, 30_000, today.toEpochDay(), bank.id, categoryId = salary.id, id = 3,
+        )
+        val previous = month.minusMonths(1)
+        val data = ledger(purchase, payment, income).copy(
+            budgets = listOf(MonthlyBudget(month.toString(), 15_000), MonthlyBudget(previous.toString(), 7_000)),
+        )
+        assertEquals(15_000L, data.spending(month, today).budget)
+        assertEquals(2_500L, data.spending(month, today).remaining)
+        assertEquals(7_000L, data.spending(previous, today).remaining)
+        assertNull(data.spending(previous.minusMonths(1), today).remaining)
+    }
+
+    @Test
+    fun zeroBudgetRemainsDistinctFromAnUnsetBudget() {
+        val data = ledger(purchase).copy(budgets = listOf(MonthlyBudget(month.toString(), 0)))
+        assertEquals(0L, data.spending(month, today).budget)
+        assertEquals(-12_500L, data.spending(month, today).remaining)
+        assertNull(ledger(purchase).spending(month, today).remaining)
     }
 
     @Test

@@ -116,6 +116,7 @@ data class LedgerSnapshot(
     val categories: List<Category>,
     val entries: List<LedgerEntry>,
     val limits: List<MonthlyLimit>,
+    val budgets: List<MonthlyBudget> = emptyList(),
 ) {
     val accountsById = accounts.associateBy(Account::id)
     val categoriesById = categories.associateBy(Category::id)
@@ -128,35 +129,36 @@ data class LedgerSnapshot(
 }
 
 internal data class Spending(
-    val income: Long,
+    val budget: Long?,
     val spent: Long,
     val categories: Map<Long, Long>,
     val limits: Map<Long, Long>,
 ) {
-    val net = income - spent
+    val remaining = budget?.minus(spent)
 }
+
+internal fun LedgerSnapshot.budgetFor(month: YearMonth): Long? =
+    budgets.firstOrNull { it.month == month.toString() }?.minor
 
 internal fun LedgerSnapshot.spending(month: YearMonth, today: LocalDate): Spending {
     val first = month.atDay(1).toEpochDay()
     val last = minOf(month.atEndOfMonth(), today).toEpochDay()
-    var income = 0L
     var spent = 0L
     val totals = mutableMapOf<Long, Long>()
 
     for (entry in entries) {
         if (entry.day !in first..last) continue
         when (entry.kind) {
-            EntryKind.INCOME -> income += entry.minor
             EntryKind.EXPENSE, EntryKind.REFUND -> {
                 val debit = if (entry.kind == EntryKind.EXPENSE) entry.minor else -entry.minor
                 val category = requireNotNull(entry.categoryId)
                 spent += debit
                 totals[category] = totals.getOrDefault(category, 0) + debit
             }
-            EntryKind.TRANSFER -> Unit
+            EntryKind.INCOME, EntryKind.TRANSFER -> Unit
         }
     }
-    return Spending(income, spent, totals, limitsFor(month))
+    return Spending(budgetFor(month), spent, totals, limitsFor(month))
 }
 
 internal fun LedgerSnapshot.limitsFor(month: YearMonth): Map<Long, Long> {

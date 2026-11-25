@@ -1,13 +1,14 @@
 # Spare
 
-Spare is an offline Android app for personal spending, account balances, and optional monthly category limits.
+Spare is an offline Android app for spending, account balances, monthly budgets, and category limits.
 
 Install [Spare.apk](Spare.apk) on Android 8.0 or newer. Choose a currency and create your first account, or restore a Spare backup.
 
-- **Overview** opens on this month’s spending. Tap a category to review the transactions behind it.
+- **Overview** shows what’s left in the selected month’s budget, alongside the budget and spending totals. Tap the main amount to set or edit the budget. Tap the eye to hide or show the card’s amounts.
+- Tap a spending category to review the transactions behind it.
 - **Add** records expenses, income, refunds, and transfers. A credit card payment is a transfer from the paying account to the card.
 - **Activity** lets you search, filter, and edit transactions. **Accounts** shows balances and lets you manage bank, cash, e-wallet, and card accounts.
-- **Settings** contains the System, Light, and Dark themes, categories, monthly limits, full JSON backup and restore, and CSV export.
+- **Settings → Appearance** offers System, Light, and Dark modes plus five theme colors. Settings also contains categories, category limits, full JSON backup and restore, and CSV export.
 
 ## Build
 

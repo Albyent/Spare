@@ -51,11 +51,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.spareledger.Appearance
 import app.spareledger.SpareViewModel
 import app.spareledger.data.CategoryKind
 import app.spareledger.data.LedgerEntry
 import app.spareledger.data.LedgerSnapshot
 import app.spareledger.data.Money
+import app.spareledger.data.budgetFor
 import app.spareledger.data.limitsFor
 import app.spareledger.data.parseMonth
 import kotlinx.coroutines.launch
@@ -72,19 +74,19 @@ private enum class Page(val title: String) {
     SETTINGS("Settings"), CATEGORIES("Categories"), LIMITS("Monthly limits"),
 }
 
-private enum class SheetType { ENTRY, ACCOUNT, CATEGORY, LIMIT }
+private enum class SheetType { ENTRY, ACCOUNT, CATEGORY, LIMIT, BUDGET }
 
 private data class SheetRequest(
     val type: SheetType,
     val id: Long? = null,
     val group: CategoryKind = CategoryKind.EXPENSE,
+    val month: String? = null,
 ) : Serializable
 
 @Composable
-internal fun SpareApp(model: SpareViewModel) {
+internal fun SpareApp(model: SpareViewModel, appearance: Appearance) {
     val data by model.data.collectAsStateWithLifecycle()
     val today by model.today.collectAsStateWithLifecycle()
-    val theme by model.theme.collectAsStateWithLifecycle()
     val busy by model.busy.collectAsStateWithLifecycle()
     val loadFailed by model.loadFailed.collectAsStateWithLifecycle()
     val pendingBackup by model.pendingBackup.collectAsStateWithLifecycle()
@@ -214,7 +216,7 @@ internal fun SpareApp(model: SpareViewModel) {
                 }
                 snapshot == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 subPage == Page.SETTINGS -> SettingsScreen(
-                    theme, currency, busy, model::changeTheme,
+                    appearance.mode, appearance.color, currency, busy, model::changeTheme, model::changeThemeColor,
                     onCategories = { page = Page.CATEGORIES }, onLimits = { showLimits(true) },
                     onBackup = { backupPicker.launch("Spare-backup-$today.json") }, onRestore = ::pickBackup,
                     onCsv = { csvPicker.launch("Spare-transactions-$today.csv") },
@@ -235,11 +237,13 @@ internal fun SpareApp(model: SpareViewModel) {
                 else -> screenState.SaveableStateProvider(tab.name) {
                     when (tab) {
                         Tab.OVERVIEW -> Overview(
-                            snapshot, today, overviewMonth, money,
+                            snapshot, today, overviewMonth, money, appearance.cardAmountsHidden,
                             onMonth = { monthKey = if (it == currentMonth) null else it.toString() },
                             onCategory = { showActivity(ActivityFilter(month = overviewMonth.toString(), categoryId = it)) },
                             onActivity = { showActivity(ActivityFilter(month = overviewMonth.toString())) },
                             onEntry = ::editEntry, onLimits = { showLimits(false) },
+                            onBudget = { sheet = SheetRequest(SheetType.BUDGET, month = overviewMonth.toString()) },
+                            onToggleCardAmounts = model::toggleCardAmounts,
                         )
                         Tab.ACTIVITY -> ActivityScreen(snapshot, money, today, filter, { filter = it }, ::editEntry)
                         Tab.ACCOUNTS -> AccountsScreen(
@@ -277,6 +281,12 @@ internal fun SpareApp(model: SpareViewModel) {
                         LimitEditor(
                             category, limitMonth, snapshot.limitsFor(limitMonth)[category.id], money,
                             busy, editorError, ::closeSheet, model::saveLimit,
+                        )
+                    }
+                    SheetType.BUDGET -> editor.month?.let(::parseMonth)?.let { month ->
+                        BudgetEditor(
+                            month, snapshot.budgetFor(month), money, busy, editorError, ::closeSheet,
+                            onSave = { model.saveBudget(month.toString(), it) },
                         )
                     }
                 }

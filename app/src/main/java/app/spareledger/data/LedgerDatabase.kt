@@ -1,6 +1,7 @@
 package app.spareledger.data
 
 import android.content.Context
+import androidx.room.AutoMigration
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -71,6 +72,12 @@ data class MonthlyLimit(
     val minor: Long,
 )
 
+@Entity(tableName = "monthly_budgets")
+data class MonthlyBudget(
+    @PrimaryKey val month: String,
+    val minor: Long,
+)
+
 @Dao
 interface LedgerDao {
     @Query("SELECT * FROM ledger_config WHERE id = 1")
@@ -91,30 +98,43 @@ interface LedgerDao {
     @Query("SELECT * FROM monthly_limits")
     suspend fun limits(): List<MonthlyLimit>
 
+    @Query("SELECT * FROM monthly_budgets ORDER BY month")
+    suspend fun budgets(): List<MonthlyBudget>
+
     @Insert suspend fun insertConfig(config: LedgerConfig)
     @Upsert suspend fun putAccount(account: Account)
     @Upsert suspend fun putCategory(category: Category)
     @Upsert suspend fun putEntry(entry: LedgerEntry)
     @Upsert suspend fun putLimit(limit: MonthlyLimit)
+    @Upsert suspend fun putBudget(budget: MonthlyBudget)
 
     @Insert suspend fun insertAccounts(accounts: List<Account>)
     @Insert suspend fun insertCategories(categories: List<Category>)
     @Insert suspend fun insertEntries(entries: List<LedgerEntry>)
     @Insert suspend fun insertLimits(limits: List<MonthlyLimit>)
+    @Insert suspend fun insertBudgets(budgets: List<MonthlyBudget>)
 
     @Query("DELETE FROM entries WHERE id = :id")
     suspend fun deleteEntry(id: Long)
 
+    @Query("DELETE FROM monthly_budgets WHERE month = :month")
+    suspend fun deleteBudget(month: String)
+
     @Query("DELETE FROM entries") suspend fun clearEntries()
     @Query("DELETE FROM monthly_limits") suspend fun clearLimits()
+    @Query("DELETE FROM monthly_budgets") suspend fun clearBudgets()
     @Query("DELETE FROM accounts") suspend fun clearAccounts()
     @Query("DELETE FROM categories") suspend fun clearCategories()
     @Query("DELETE FROM ledger_config") suspend fun clearConfig()
 }
 
 @Database(
-    entities = [LedgerConfig::class, Account::class, Category::class, LedgerEntry::class, MonthlyLimit::class],
-    version = 1,
+    entities = [
+        LedgerConfig::class, Account::class, Category::class, LedgerEntry::class, MonthlyLimit::class,
+        MonthlyBudget::class,
+    ],
+    version = 2,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 abstract class LedgerDatabase : RoomDatabase() {
     abstract fun ledgerDao(): LedgerDao

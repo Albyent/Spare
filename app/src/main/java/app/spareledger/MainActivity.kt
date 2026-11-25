@@ -30,6 +30,7 @@ import app.spareledger.data.LocalFiles
 import app.spareledger.data.MonthlyLimit
 import app.spareledger.ui.SpareApp
 import app.spareledger.ui.SpareTheme
+import app.spareledger.ui.ThemeColor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -50,8 +51,8 @@ class MainActivity : ComponentActivity() {
         )
         model = ViewModelProvider(this)[SpareViewModel::class.java]
         setContent {
-            val mode by model.theme.collectAsStateWithLifecycle()
-            val dark = when (mode) {
+            val appearance by model.appearance.collectAsStateWithLifecycle()
+            val dark = when (appearance.mode) {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
@@ -62,7 +63,7 @@ class MainActivity : ComponentActivity() {
                     isAppearanceLightNavigationBars = !dark
                 }
             }
-            SpareTheme(dark) { SpareApp(model) }
+            SpareTheme(dark, appearance.color) { SpareApp(model, appearance) }
         }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -84,6 +85,12 @@ internal enum class ThemeMode(val label: String) {
     SYSTEM("System"), LIGHT("Light"), DARK("Dark"),
 }
 
+internal data class Appearance(
+    val mode: ThemeMode,
+    val color: ThemeColor,
+    val cardAmountsHidden: Boolean,
+)
+
 internal data class Feedback(
     val message: String,
     val closeSheet: Boolean = false,
@@ -94,10 +101,16 @@ internal data class Feedback(
 class SpareViewModel(private val application: Application) : AndroidViewModel(application) {
     private val ledger = LedgerRepository(application)
     private val preferences = application.getSharedPreferences("appearance", 0)
-    private val currentTheme = MutableStateFlow(
-        ThemeMode.entries.firstOrNull { it.name == preferences.getString("theme", null) } ?: ThemeMode.SYSTEM,
+    private val currentAppearance = MutableStateFlow(
+        Appearance(
+            mode = ThemeMode.entries.firstOrNull { it.name == preferences.getString("theme", null) }
+                ?: ThemeMode.SYSTEM,
+            color = ThemeColor.entries.firstOrNull { it.name == preferences.getString("theme_color", null) }
+                ?: ThemeColor.FOREST,
+            cardAmountsHidden = preferences.getBoolean("hide_card_amounts", false),
+        ),
     )
-    internal val theme = currentTheme.asStateFlow()
+    internal val appearance = currentAppearance.asStateFlow()
 
     private val currentData = MutableStateFlow<LedgerSnapshot?>(null)
     internal val data = currentData.asStateFlow()
@@ -127,9 +140,22 @@ class SpareViewModel(private val application: Application) : AndroidViewModel(ap
         currentDate.value = LocalDate.now()
     }
 
-    internal fun changeTheme(mode: ThemeMode) {
-        preferences.edit { putString("theme", mode.name) }
-        currentTheme.value = mode
+    internal fun changeTheme(mode: ThemeMode) = saveAppearance(currentAppearance.value.copy(mode = mode))
+
+    internal fun changeThemeColor(color: ThemeColor) = saveAppearance(currentAppearance.value.copy(color = color))
+
+    internal fun toggleCardAmounts() {
+        val appearance = currentAppearance.value
+        saveAppearance(appearance.copy(cardAmountsHidden = !appearance.cardAmountsHidden))
+    }
+
+    private fun saveAppearance(next: Appearance) {
+        preferences.edit {
+            putString("theme", next.mode.name)
+            putString("theme_color", next.color.name)
+            putBoolean("hide_card_amounts", next.cardAmountsHidden)
+        }
+        currentAppearance.value = next
     }
 
     internal fun setup(currencyCode: String, account: Account) =
@@ -160,6 +186,11 @@ class SpareViewModel(private val application: Application) : AndroidViewModel(ap
     internal fun saveLimit(limit: MonthlyLimit) =
         write("Couldn’t update the monthly limit.", if (limit.minor == 0L) "Limit removed" else "Limit saved") {
             ledger.saveLimit(limit)
+        }
+
+    internal fun saveBudget(month: String, amount: Long?) =
+        write("Couldn’t update the monthly budget.", if (amount == null) "Budget removed" else "Budget saved") {
+            ledger.saveBudget(month, amount)
         }
 
     internal fun exportBackup(uri: Uri) = execute("Couldn’t save the backup.") {

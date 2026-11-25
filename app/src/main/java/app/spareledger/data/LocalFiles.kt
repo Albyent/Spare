@@ -14,7 +14,7 @@ import java.time.LocalDate
 
 internal object LocalFiles {
     private const val FORMAT = "spare-ledger"
-    private const val VERSION = 1
+    private const val VERSION = 2
     private const val MAX_BYTES = 24 * 1024 * 1024
 
     suspend fun backup(context: Context, uri: Uri, data: LedgerSnapshot) = withContext(Dispatchers.IO) {
@@ -44,6 +44,9 @@ internal object LocalFiles {
             "limits" to array(data.limits) {
                 fields("categoryId" to it.categoryId, "month" to it.month, "minor" to it.minor)
             },
+            "budgets" to array(data.budgets) {
+                fields("month" to it.month, "minor" to it.minor)
+            },
         )
         val bytes = document.toString().toByteArray(Charsets.UTF_8)
         require(bytes.size <= MAX_BYTES)
@@ -65,7 +68,8 @@ internal object LocalFiles {
         val parser = JSONTokener(text)
         val document = parser.nextValue() as JSONObject
         require(parser.nextClean() == '\u0000')
-        require(document.text("format") == FORMAT && document.integer("version") == VERSION.toLong())
+        val version = document.integer("version")
+        require(document.text("format") == FORMAT && version in 1L..VERSION.toLong())
         val code = document.text("currency")
         require(supportedCurrency(code) != null)
 
@@ -98,7 +102,11 @@ internal object LocalFiles {
             }
         }
         require(limits.distinctBy { it.categoryId to it.month }.size == limits.size)
-        LedgerSnapshot(LedgerConfig(code), accounts, categories, entries, limits)
+        val budgets = if (version >= 2) document.list("budgets") {
+            MonthlyBudget(text("month"), integer("minor")).also(::validateBudget)
+        } else emptyList()
+        require(budgets.distinctBy(MonthlyBudget::month).size == budgets.size)
+        LedgerSnapshot(LedgerConfig(code), accounts, categories, entries, limits, budgets)
     }
 
     suspend fun exportCsv(context: Context, uri: Uri, data: LedgerSnapshot) = withContext(Dispatchers.IO) {

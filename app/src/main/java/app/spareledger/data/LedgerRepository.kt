@@ -84,9 +84,19 @@ internal class LedgerRepository(context: Context) {
         putLimit(limit)
     }
 
+    suspend fun saveBudget(month: String, amount: Long?): LedgerSnapshot = update {
+        if (amount == null) {
+            require(parseMonth(month) != null)
+            deleteBudget(month)
+        } else {
+            putBudget(MonthlyBudget(month, amount).also(::validateBudget))
+        }
+    }
+
     suspend fun restore(data: LedgerSnapshot): LedgerSnapshot = update {
         clearEntries()
         clearLimits()
+        clearBudgets()
         clearAccounts()
         clearCategories()
         clearConfig()
@@ -95,6 +105,7 @@ internal class LedgerRepository(context: Context) {
         insertCategories(data.categories)
         insertEntries(data.entries)
         insertLimits(data.limits)
+        insertBudgets(data.budgets)
     }
 
     private suspend fun update(operation: suspend LedgerDao.() -> Unit): LedgerSnapshot =
@@ -104,7 +115,7 @@ internal class LedgerRepository(context: Context) {
         }
 
     private suspend fun snapshot() =
-        LedgerSnapshot(dao.config(), dao.accounts(), dao.categories(), dao.entries(), dao.limits())
+        LedgerSnapshot(dao.config(), dao.accounts(), dao.categories(), dao.entries(), dao.limits(), dao.budgets())
 }
 
 internal fun validateAccount(account: Account) {
@@ -136,4 +147,9 @@ internal fun validateLimit(limit: MonthlyLimit, categories: Map<Long, Category>)
     require(categories[limit.categoryId]?.kind == CategoryKind.EXPENSE)
     require(parseMonth(limit.month) != null)
     require(limit.minor in 0..MAX_MINOR)
+}
+
+internal fun validateBudget(budget: MonthlyBudget) {
+    require(parseMonth(budget.month) != null)
+    require(budget.minor in 0..MAX_MINOR)
 }

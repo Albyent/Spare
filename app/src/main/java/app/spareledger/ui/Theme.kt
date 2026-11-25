@@ -1,6 +1,7 @@
 package app.spareledger.ui
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -8,15 +9,17 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-internal val SpareLight = lightColorScheme(
+private val spareLight = lightColorScheme(
     primary = Color(0xFF315E48),
     onPrimary = Color(0xFFFFFDF6),
     primaryContainer = Color(0xFFDDEADC),
@@ -42,7 +45,7 @@ internal val SpareLight = lightColorScheme(
     onErrorContainer = Color(0xFF822B2B),
 )
 
-internal val SpareDark = darkColorScheme(
+private val spareDark = darkColorScheme(
     primary = Color(0xFFB5D7BD),
     onPrimary = Color(0xFF193324),
     primaryContainer = Color(0xFF2D4737),
@@ -70,15 +73,71 @@ internal val SpareDark = darkColorScheme(
 
 internal data class HeroColors(val start: Color, val end: Color) {
     val text = Color(0xFFFFF8E9)
-    val muted = Color(0xFFCFDED1)
-    val divider = Color(0xFF648274)
-    val positive = Color(0xFFC6E7CB)
+    val muted = lerp(text, end, 0.20f)
+    val divider = lerp(start, text, 0.30f)
     val negative = Color(0xFFFFC9B6)
 }
 
-private val lightHero = HeroColors(Color(0xFF294F3B), Color(0xFF19382F))
-private val darkHero = HeroColors(Color(0xFF28463A), Color(0xFF20392F))
-internal val LocalHero = staticCompositionLocalOf { lightHero }
+internal data class ThemePalette(
+    val primary: Color,
+    val onPrimary: Color,
+    val container: Color,
+    val onContainer: Color,
+    val hero: HeroColors,
+)
+
+private fun palette(primary: Long, ink: Long, container: Long, onContainer: Long, start: Long, end: Long) =
+    ThemePalette(Color(primary), Color(ink), Color(container), Color(onContainer), HeroColors(Color(start), Color(end)))
+
+internal enum class ThemeColor(val label: String, private val light: ThemePalette, private val dark: ThemePalette) {
+    FOREST(
+        "Forest",
+        palette(0xFF315E48, 0xFFFFFDF6, 0xFFDDEADC, 0xFF20402E, 0xFF294F3B, 0xFF19382F),
+        palette(0xFFB5D7BD, 0xFF193324, 0xFF2D4737, 0xFFD8ECDD, 0xFF28463A, 0xFF20392F),
+    ),
+    OCEAN(
+        "Ocean",
+        palette(0xFF2B566A, 0xFFFFFDF6, 0xFFDCEBF0, 0xFF173D51, 0xFF31596B, 0xFF203E50),
+        palette(0xFFA7D4E6, 0xFF172F3E, 0xFF293F4C, 0xFFD6EEF5, 0xFF2C4858, 0xFF243C49),
+    ),
+    PLUM(
+        "Plum",
+        palette(0xFF684B70, 0xFFFFFDF6, 0xFFEDE2EF, 0xFF472B52, 0xFF594361, 0xFF3D2B49),
+        palette(0xFFDEC0E6, 0xFF3B2B42, 0xFF45344A, 0xFFF0DEF4, 0xFF473B50, 0xFF352B40),
+    ),
+    CLAY(
+        "Clay",
+        palette(0xFF834E3C, 0xFFFFFDF6, 0xFFF5E2D8, 0xFF5D3328, 0xFF694737, 0xFF513429),
+        palette(0xFFF2C1AB, 0xFF482C23, 0xFF4D362D, 0xFFF7DCD0, 0xFF533C32, 0xFF422F28),
+    ),
+    GOLD(
+        "Gold",
+        palette(0xFF755823, 0xFFFFFDF6, 0xFFF3E7CD, 0xFF513A17, 0xFF5B4928, 0xFF41351E),
+        palette(0xFFEBD39C, 0xFF3D3018, 0xFF4B3F26, 0xFFF4E5C6, 0xFF514329, 0xFF3D3423),
+    ),
+    ;
+
+    fun palette(isDark: Boolean): ThemePalette = if (isDark) dark else light
+
+    fun scheme(isDark: Boolean): ColorScheme {
+        val base = if (isDark) spareDark else spareLight
+        val active = palette(isDark)
+        return base.copy(
+            primary = active.primary,
+            onPrimary = active.onPrimary,
+            primaryContainer = active.container,
+            onPrimaryContainer = active.onContainer,
+            inversePrimary = palette(!isDark).primary,
+            secondary = active.primary,
+            onSecondary = active.onPrimary,
+            secondaryContainer = lerp(base.secondaryContainer, active.container, 0.72f),
+            onSecondaryContainer = active.onContainer,
+            surfaceTint = active.primary,
+        )
+    }
+}
+
+internal val LocalHero = staticCompositionLocalOf { ThemeColor.FOREST.palette(false).hero }
 
 private val plain = FontFamily.SansSerif
 private val display = FontFamily.Serif
@@ -112,10 +171,11 @@ private val spareTypography = Typography(
 )
 
 @Composable
-internal fun SpareTheme(dark: Boolean, content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalHero provides if (dark) darkHero else lightHero) {
+internal fun SpareTheme(dark: Boolean, color: ThemeColor, content: @Composable () -> Unit) {
+    val scheme = remember(dark, color) { color.scheme(dark) }
+    CompositionLocalProvider(LocalHero provides color.palette(dark).hero) {
         MaterialTheme(
-            colorScheme = if (dark) SpareDark else SpareLight,
+            colorScheme = scheme,
             typography = spareTypography,
             shapes = Shapes(
                 extraSmall = RoundedCornerShape(8.dp),

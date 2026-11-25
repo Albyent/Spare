@@ -1,6 +1,7 @@
 package app.spareledger.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,14 +12,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -38,6 +43,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.spareledger.data.Category
@@ -58,11 +66,14 @@ internal fun Overview(
     today: LocalDate,
     month: YearMonth,
     money: Money,
+    cardAmountsHidden: Boolean,
     onMonth: (YearMonth) -> Unit,
     onCategory: (Long) -> Unit,
     onActivity: () -> Unit,
     onEntry: (LedgerEntry) -> Unit,
     onLimits: () -> Unit,
+    onBudget: () -> Unit,
+    onToggleCardAmounts: () -> Unit,
 ) {
     val report = remember(data, month, today) { data.spending(month, today) }
     val currentMonth = YearMonth.from(today)
@@ -88,7 +99,7 @@ internal fun Overview(
                 MonthControl(month, choices, onMonth)
             }
             item {
-                SpendingCard(report, money, month == currentMonth)
+                SpendingCard(report, money, month == currentMonth, cardAmountsHidden, onBudget, onToggleCardAmounts)
             }
             item {
                 Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -137,42 +148,91 @@ internal fun Overview(
 }
 
 @Composable
-private fun SpendingCard(report: Spending, money: Money, current: Boolean) {
+private fun SpendingCard(
+    report: Spending,
+    money: Money,
+    current: Boolean,
+    hidden: Boolean,
+    onBudget: () -> Unit,
+    onToggle: () -> Unit,
+) {
     val hero = LocalHero.current
+    val remaining = report.remaining
+    val overBudget = remaining != null && remaining < 0 && !hidden
+    val heading = when {
+        overBudget -> "Over budget"
+        current -> "Left this month"
+        else -> "Budget remaining"
+    }
+    val mainValue = when {
+        remaining == null -> "Set budget"
+        hidden -> hiddenAmount
+        else -> money.format(abs(remaining))
+    }
     Column(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.extraLarge)
-            .background(Brush.linearGradient(listOf(hero.start, hero.end))).padding(22.dp),
+            .background(Brush.linearGradient(listOf(hero.start, hero.end))),
     ) {
-        val heading = when {
-            report.spent < 0 -> "Net refunds"
-            current -> "Spent this month"
-            else -> "Total spent"
-        }
-        Text(heading, color = hero.muted, style = MaterialTheme.typography.titleSmall)
-        AmountText(
-            money.format(abs(report.spent)), Modifier.fillMaxWidth().padding(top = 3.dp, bottom = 15.dp),
-            style = MaterialTheme.typography.displayLarge, color = hero.text,
-        )
-        HorizontalDivider(color = hero.divider)
         Row(
-            Modifier.fillMaxWidth().padding(top = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            SpendingMetric("Income", money.format(report.income), hero.text, Modifier.weight(1f))
-            SpendingMetric(
-                "Income minus spending", money.format(report.net, signed = true),
-                if (report.net < 0) hero.negative else hero.positive,
-                Modifier.weight(1f),
-            )
+            Column(
+                Modifier.weight(1f).clip(MaterialTheme.shapes.medium).clickable(
+                    onClickLabel = if (remaining == null) "Set monthly budget" else "Edit monthly budget",
+                    role = Role.Button,
+                    onClick = onBudget,
+                ).padding(start = 12.dp, end = 4.dp, top = 14.dp, bottom = 15.dp),
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(heading, color = hero.muted, style = MaterialTheme.typography.titleSmall)
+                    Icon(Icons.Outlined.Edit, null, Modifier.size(14.dp), tint = hero.muted)
+                }
+                AmountText(
+                    mainValue, Modifier.fillMaxWidth().padding(top = 3.dp).amountVisibility(mainValue),
+                    style = MaterialTheme.typography.displayLarge, color = if (overBudget) hero.negative else hero.text,
+                )
+            }
+            IconButton(onClick = onToggle) {
+                Icon(
+                    if (hidden) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                    contentDescription = if (hidden) "Show card amounts" else "Hide card amounts",
+                    modifier = Modifier.size(21.dp),
+                    tint = hero.text,
+                )
+            }
+        }
+        Column(Modifier.padding(start = 22.dp, end = 22.dp, bottom = 20.dp)) {
+            HorizontalDivider(color = hero.divider)
+            Row(
+                Modifier.fillMaxWidth().padding(top = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                val budget = report.budget?.let { if (hidden) hiddenAmount else money.format(it) } ?: "—"
+                val spent = if (hidden) hiddenAmount else money.format(report.spent)
+                SpendingMetric("Monthly budget", budget, Modifier.weight(1f))
+                SpendingMetric(if (current) "Spent this month" else "Total spent", spent, Modifier.weight(1f))
+            }
         }
     }
 }
 
+private const val hiddenAmount = "••••"
+
+private fun Modifier.amountVisibility(value: String): Modifier =
+    if (value == hiddenAmount) clearAndSetSemantics { contentDescription = "Amount hidden" } else this
+
 @Composable
-private fun SpendingMetric(label: String, value: String, ink: Color, modifier: Modifier) {
+private fun SpendingMetric(label: String, value: String, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = LocalHero.current.muted)
-        AmountText(value, Modifier.fillMaxWidth(), color = ink, style = MaterialTheme.typography.titleLarge)
+        AmountText(
+            value, Modifier.fillMaxWidth().amountVisibility(value),
+            color = LocalHero.current.text, style = MaterialTheme.typography.titleLarge,
+        )
     }
 }
 
@@ -259,6 +319,7 @@ internal fun MonthControl(month: YearMonth, choices: List<YearMonth>, onMonth: (
 internal fun availableMonths(data: LedgerSnapshot, current: YearMonth): List<YearMonth> =
     ((0L..11L).map(current::minusMonths) +
         data.entries.map { YearMonth.from(LocalDate.ofEpochDay(it.day)) } +
-        data.limits.mapNotNull { parseMonth(it.month) }).filter { it <= current }.distinct().sortedDescending()
+        data.limits.mapNotNull { parseMonth(it.month) } +
+        data.budgets.mapNotNull { parseMonth(it.month) }).filter { it <= current }.distinct().sortedDescending()
 
 internal fun monthLabel(month: YearMonth): String = month.format(DateTimeFormatter.ofPattern("LLLL yyyy"))
